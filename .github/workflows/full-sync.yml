@@ -1,0 +1,47 @@
+name: Full Mirror Sync
+
+on:
+  schedule:
+    - cron: '30 */6 * * *'
+  workflow_dispatch: # Allows manual trigger for testing
+
+jobs:
+  sync_and_preserve:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync and Restore Workflow
+        run: |
+          # 1. Configure Git bot identity
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 2. Backup current workflow directory to a temporary location
+          echo "Saving workflow files to temporary directory..."
+          mkdir -p /tmp/wf_backup
+          cp -r .github /tmp/wf_backup/
+
+          # 3. Add upstream sourceware repository and fetch latest code
+          git remote add upstream https://sourceware.org/git/glibc.git
+          git fetch upstream master
+
+          # 4. Force reset local master branch to upstream state (this temporarily removes .github)
+          git checkout master
+          git reset --hard upstream/master
+
+          # 5. Restore the backed-up workflow files from the temporary directory
+          echo "Restoring personal workflow files..."
+          cp -r /tmp/wf_backup/.github .
+
+          # 6. Commit the restored workflow on top of the synced code and force push
+          git add .github
+          git commit -m "Sync: Update glibc to $(git rev-parse --short upstream/master) and preserve personal workflow" || echo "No changes to commit"
+          
+          git push origin master --force
